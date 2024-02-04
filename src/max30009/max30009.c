@@ -47,7 +47,9 @@ static int max30009_soft_reset()
         return -EIO;
     }
 
-    k_sleep(K_MSEC(10));
+    spi_cs_set(SPI_CS_ACTIVE);
+    k_sleep(K_MSEC(200));
+    spi_cs_set(SPI_CS_INACTIVE);
 
     return 0;
 }
@@ -115,12 +117,14 @@ int max30009_init(max30009_conf_t_p conf)
         return err;
     }
 
+    k_sleep(K_MSEC(10));
+
     err = max30009_soft_reset();
     if(err){
         LOG_ERR("Reset procedure fail");
         return err;
     } 
-
+    
     // Check part id
     err = spi_read_reg(PART_ID_REGISTER, &reg_data);
     if(err){

@@ -18,17 +18,34 @@ static const struct device *spi_device = DEVICE_DT_GET(MAX30009_SPI_NODE);
 static const struct spi_config max30009_cfg = {
     .cs = {{0}},
     .slave = 0,
-    .frequency = 1000000,
-    .operation = SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8) | SPI_MODE_CPOL | SPI_MODE_CPHA, // MODE 3
+    .frequency = 800000,
+    .operation = (SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8) | SPI_MODE_CPHA | SPI_MODE_CPOL | SPI_FULL_DUPLEX), // MODE 3
 };
 
 static struct gpio_dt_spec max30009_cs_dt = GPIO_DT_SPEC_GET(MAX30009_CS_NODE, gpios);
 
-static void spi_cs_set(uint8_t value)
+static int spi_write_read(struct spi_buf_set *tx_set, struct spi_buf_set *rx_set)
 {
-    gpio_pin_set_dt(&max30009_cs_dt, value);
+    int err = 0;
+    err = spi_write(spi_device, &max30009_cfg, tx_set);
+    if(err){
+        LOG_ERR("SPI write fail");
+        return err;
+    }
+
+    err = spi_read(spi_device, &max30009_cfg, rx_set);
+    if(err){
+        LOG_ERR("SPI read fail, err %d", err);
+        return err;
+    }
+
+    return err;
 }
 
+void spi_cs_set(int value)
+{
+    gpio_pin_set_raw(max30009_cs_dt.port, max30009_cs_dt.pin, value);
+}
 
 int spi_init()
 {
@@ -37,12 +54,14 @@ int spi_init()
         return -ENODEV;
     }
 
-    if(gpio_pin_configure_dt(&max30009_cs_dt, GPIO_OUTPUT_INACTIVE)){
+    if(gpio_pin_configure_dt(&max30009_cs_dt, GPIO_OUTPUT)){
         LOG_ERR("Config CS fail");
         return -EIO;
     }
 
-    spi_cs_set(0);
+    spi_cs_set(SPI_CS_ACTIVE);
+    k_sleep(K_MSEC(500)); // Keep low for reset period
+    spi_cs_set(SPI_CS_INACTIVE);
 
     if(!device_is_ready(spi_device)){
         LOG_ERR("SPI device not ready");
@@ -82,15 +101,14 @@ int spi_read_reg(uint8_t reg, uint8_t *data)
         .count = 1
     };
 
-    spi_cs_set(1);
+    spi_cs_set(SPI_CS_ACTIVE);
 
-    err = spi_transceive(spi_device, &max30009_cfg, &tx_buf_set, &rx_buf_set);
+    err = spi_write_read(&tx_buf_set, &rx_buf_set);
     if(err){
-        LOG_ERR("SPI read fail, err %d", err);
-        return err;
+        return err; 
     }
 
-    spi_cs_set(0);
+    spi_cs_set(SPI_CS_INACTIVE);
 
     LOG_DBG("SPI reg read complete, value 0x%02x", *data);
 
@@ -125,15 +143,15 @@ int spi_burst_read(uint8_t reg, uint8_t *data, uint8_t data_len)
         .count = 1
     };
 
-    spi_cs_set(1);
+    spi_cs_set(SPI_CS_ACTIVE);
 
-    err = spi_transceive(spi_device, &max30009_cfg, &tx_buf_set, &rx_buf_set);
+    err = spi_write_read(&tx_buf_set, &rx_buf_set);
     if(err){
         LOG_ERR("SPI read fail, err %d", err);
         return err;
     }
 
-    spi_cs_set(0);
+    spi_cs_set(SPI_CS_INACTIVE);
 
     LOG_DBG("SPI reg read complete, value 0x%02x", *data);
 
@@ -145,13 +163,13 @@ int spi_write_reg(uint8_t reg, uint8_t data)
     int err = 0;
 
     uint8_t tx_data[] = {
-        reg, MAX30009_SPI_WRITE
+        reg, MAX30009_SPI_WRITE, data
     };
 
 
     struct spi_buf tx_buf = {
         .buf = tx_data,
-        .len = 2
+        .len = 3
     };
 
     struct spi_buf_set tx_buf_set = {
@@ -159,7 +177,7 @@ int spi_write_reg(uint8_t reg, uint8_t data)
         .count = 1
     };
 
-    spi_cs_set(1);
+    spi_cs_set(SPI_CS_ACTIVE);
 
     err = spi_write(spi_device, &max30009_cfg, &tx_buf_set);
     if(err){
@@ -167,7 +185,7 @@ int spi_write_reg(uint8_t reg, uint8_t data)
         return err;
     }
 
-    spi_cs_set(0);
+    spi_cs_set(SPI_CS_INACTIVE);
 
     return 0;
 }

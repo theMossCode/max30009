@@ -3,7 +3,12 @@
 
 #include <stdint.h>
 
+#define SPI_CS_ACTIVE           0
+#define SPI_CS_INACTIVE         1
+
 int spi_init();
+
+void spi_cs_set(int value);
 
 int spi_read_reg(uint8_t reg, uint8_t *data);
 
